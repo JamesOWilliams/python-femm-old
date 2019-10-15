@@ -3,7 +3,7 @@
 Work in progress, commands are being added as the wrapper is used,
 therefore not all commands have been wrapped.
 
-```
+```python
 from wrapper import FEMMSession
 # The FEMM window will open when a FEMMSession is instantiated.
 femm = FEMMSession()
