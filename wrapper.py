@@ -41,10 +41,13 @@ class FEMMSession:
     def _add_doctype_prefix(self, string):
         return self.doctype_prefix + string
 
-    def call_femm(self, string):
+    def call_femm(self, string, add_doctype_prefix=False):
         """Call a given command string using ``mlab2femm``."""
 
-        res = self.__to_femm.mlab2femm(string)
+        if add_doctype_prefix:
+            res = self.__to_femm.mlab2femm(self._add_doctype_prefix(string))
+        else:
+            res = self.__to_femm.mlab2femm(string)
         if len(res) == 0:
             res = []
         elif res[0] == 'e':
@@ -99,7 +102,7 @@ class FEMMSession:
         self.call_femm(f'newdocument({mode})')
         self.set_mode(mode)
 
-    def close(self):
+    def quit(self):
         """Close all documents and exit the the Interactive Shell at the end of
         the currently executing Lua script."""
 
@@ -123,8 +126,8 @@ class BaseAPI:
     def _add_mode_prefix(self, string):
         return f'{self.mode_prefix}_{string}'
 
-    def _call_femm(self, string):
-        return self.session.call_femm(self._add_mode_prefix(string))
+    def _call_femm(self, string, add_doctype_prefix=False):
+        return self.session.call_femm(f'{self._add_mode_prefix(string)}()', add_doctype_prefix=add_doctype_prefix)
 
     def _call_femm_with_args(self, string, *args):
         return self.session.call_femm_with_args(self._add_mode_prefix(string), *args)
@@ -134,6 +137,14 @@ class PreprocessorAPI(BaseAPI):
     """Preprocessor API"""
 
     mode_prefix = 'i'
+
+    def close(self):
+        """Closes current magnetics preprocessor document and
+        destroys magnetics preprocessor window."""
+
+        self._call_femm('close', add_doctype_prefix=True)
+
+    # Object Add/Remove Commands
 
     def add_node(self, x, y):
         """Add a new node at x, y."""
@@ -154,7 +165,51 @@ class PreprocessorAPI(BaseAPI):
         """Add a new arc segment from the nearest node to (x1, y1) to the nearest node to
         (x2, y2) with angle ‘angle’ divided into ‘max_seg’ segments"""
 
-        self._call_femm_with_args('add_arc', x1, y1, x2, y2, angle, max_seg)
+        self._call_femm_with_args('addarc', x1, y1, x2, y2, angle, max_seg)
+
+    def draw_line(self, x1, y1, x2, y2):
+        """Adds nodes at (x1,y1) and (x2,y2) and adds a line between the nodes."""
+
+        self.add_node(x1, y1)
+        self.add_node(x2, y2)
+        self.add_segment(x1, y1, x2, y2)
+
+    def draw_polyline(self, points_list):
+        """Adds nodes at each of the specified points and connects them with segments.
+        ``points_list`` will look something like [[x1, y1], [x2, y2], ...]"""
+
+        for i, current_point in enumerate(points_list):
+            # Add each node.
+            self.add_node(*current_point)
+            if 0 < i < len(points_list):
+                # Draw lines between each node.
+                previous_point = points_list[i-1]
+                self.draw_line(*previous_point, *current_point)
+
+    def draw_polygon(self, points_list):
+        """Adds nodes at each of the specified points and connects them with
+        segments to form a closed contour."""
+
+        self.draw_polyline(points_list)
+        # Connect the first and the last nodes.
+        self.draw_line(*points_list[0], *points_list[::-1][0])
+
+    def draw_arc(self, x1, y1, x2, y2, angle, max_seg):
+        """Adds nodes at (x1,y1) and (x2,y2) and adds an arc of the specified
+        angle and discretization connecting the nodes."""
+
+        self.add_node(x1, y1)
+        self.add_node(x2, y2)
+        self.add_arc(x1, y1, x2, y2, angle, max_seg)
+
+    def draw_rectangle(self, x1, y1, x2, y2):
+        """Adds nodes at the corners of a rectangle defined by the points (x1, y1) and
+        (x2, y2), then adds segments connecting the corners of the rectangle."""
+
+        self.draw_line(x1, y1, x2, y1)
+        self.draw_line(x2, y1, x2, y2)
+        self.draw_line(x2, y2, x1, y2)
+        self.draw_line(x1, y2, x1, y1)
 
     def delete_selected(self):
         """Delete all selected objects."""
@@ -181,6 +236,48 @@ class PreprocessorAPI(BaseAPI):
 
         self._call_femm('deleteselectedarcsegments')
 
+    # Geometry Selection Commands
+
+    def clear_selected(self):
+        ...
+
+    def select_segment(self):
+        ...
+
+    def select_node(self):
+        ...
+
+    def select_label(self):
+        ...
+
+    def select_arc_segment(self):
+        ...
+
+    def select_group(self):
+        ...
+
+    # Object Labeling Commands
+
+    def set_node_prop(self):
+        ...
+
+    def set_block_prop(self):
+        ...
+
+    # Problem Commands
+
+    # Mesh Commands
+
+    # Editing Commands
+
+    # Zoom Commands
+
+    # View Commands
+
+    # Object Properties
+
+    # Miscellaneous
+
 
 class PostProcessorAPI(BaseAPI):
     """Postprocessor API"""
@@ -198,7 +295,7 @@ class PostProcessorAPI(BaseAPI):
 
     def block_integral(self, integral_type):
         """Calculate a block integral for the selected blocks. This function returns one
-        (possibly complex) value, e.g.: volume = mo blockintegral(10)."""
+        (possibly complex) value, e.g.: volume = mo_blockintegral(10)."""
 
         return self._call_femm_with_args('blockintegral', integral_type)
 
