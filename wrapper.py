@@ -1,21 +1,45 @@
 import os
 import win32com.client
 
+DOCTYPE_MAPPING = {
+    'magnetics': 1,
+    'electrostatics': 2,
+    'heat': 3,
+    'current': 4,
+}
+
+DOCTYPE_PREFIX_MAPPING = {
+    0: 'm',
+    'magnetics': 'm',
+    1: 'e',
+    'electrostatics': 'e',
+    2: 'h',
+    'heat': 'h',
+    3: 'c',
+    'current': 'c',
+}
+
+PREFIX_DOCTYPE_MAPPING = {
+    'm': 'magnetics',
+    'e': 'electrostatics',
+    'h': 'heat',
+    'c': 'current',
+}
+
 
 class FEMMSession:
     """A simple wrapper around FEMM 4.2."""
 
+    doctype_prefix = None
+
     def __init__(self):
         self.__to_femm = win32com.client.Dispatch('femm.ActiveFEMM')
         self.set_current_directory()
-        self.magnetics = type('Magnetics', (object,), {
-            'pre': MagneticsPreprocessorAPI(self),
-            'post': MagneticsPostprocessorAPI(self),
-        })
-        self.current = type('Current', (object,), {
-            'pre': CurrentPreprocessorAPI(self),
-            'post': CurrentPostprocessorAPI(self),
-        })
+        self.pre = PreprocessorAPI(self)
+        self.post = PostProcessorAPI(self)
+
+    def _add_doctype_prefix(self, string):
+        return self.doctype_prefix + string
 
     def call_femm(self, string):
         """Call a given command string using ``mlab2femm``."""
@@ -36,18 +60,18 @@ class FEMMSession:
 
         self.__to_femm(string)
 
-    def call_femm_with_args(self, command, *args):
+    def call_femm_with_args(self, command, *args, add_doctype_prefix=True):
         """Call a given command string using ``mlab2femm`` and parse the args."""
 
+        if add_doctype_prefix:
+            return self.call_femm(self._add_doctype_prefix(command) + self._parse_args(args))
         return self.call_femm(command + self._parse_args(args))
 
     @staticmethod
     def _fix_path(path):
         """Replace \\ and // with a single forward slash."""
 
-        return path \
-            .replace('\\', '/') \
-            .replace('//', '/')
+        return path.replace('\\', '/').replace('//', '/')
 
     @staticmethod
     def _parse_args(args):
@@ -71,13 +95,9 @@ class FEMMSession:
         to be 0 for a magnetics problem, 1 for an electrostatics problem, 2 for a heat flow problem,
         or 3 for a current flow problem. An alternative syntax for this command is create(doctype)."""
 
-        doctype_mapping = {
-            'magnetics': 1,
-            'electrostatics': 2,
-            'heat': 3,
-            'current': 4,
-        }
-        self.call_femm(f'newdocument({doctype_mapping[doctype] if isinstance(doctype, str) else doctype})')
+        mode = DOCTYPE_MAPPING[doctype] if isinstance(doctype, str) else doctype
+        self.call_femm(f'newdocument({mode})')
+        self.set_mode(mode)
 
     def close(self):
         """Close all documents and exit the the Interactive Shell at the end of
@@ -85,27 +105,35 @@ class FEMMSession:
 
         self.call_femm('quit()')
 
+    def set_mode(self, doctype):
+        self.doctype_prefix = DOCTYPE_PREFIX_MAPPING[doctype]
+
+    @property
+    def mode(self):
+        return PREFIX_DOCTYPE_MAPPING[self.doctype_prefix]
+
 
 class BaseAPI:
 
-    prefix = None
+    mode_prefix = None
 
     def __init__(self, session):
         self.session = session
 
-    def _add_prefix(self, string):
-        return f'{self.prefix}_{string}'
+    def _add_mode_prefix(self, string):
+        return f'{self.mode_prefix}_{string}'
 
     def _call_femm(self, string):
-        return self.session.call_femm(self._add_prefix(string))
+        return self.session.call_femm(self._add_mode_prefix(string))
 
     def _call_femm_with_args(self, string, *args):
-        return self.session.call_femm_with_args(self._add_prefix(string), *args)
+        return self.session.call_femm_with_args(self._add_mode_prefix(string), *args)
 
 
-class BasePreprocessorAPI(BaseAPI):
+class PreprocessorAPI(BaseAPI):
+    """Preprocessor API"""
 
-    prefix = None
+    mode_prefix = 'i'
 
     def add_node(self, x, y):
         """Add a new node at x, y."""
@@ -154,7 +182,10 @@ class BasePreprocessorAPI(BaseAPI):
         self._call_femm('deleteselectedarcsegments')
 
 
-class BasePostProcessorAPI(BaseAPI):
+class PostProcessorAPI(BaseAPI):
+    """Postprocessor API"""
+
+    mode_prefix = 'o'
 
     def line_integral(self, integral_type):
         """Calculate the line integral for the defined contour. Returns typically two (possibly
@@ -175,27 +206,3 @@ class BasePostProcessorAPI(BaseAPI):
         """Get the values associated with the point at x,y return values in order"""
 
         self._call_femm_with_args('getpointvalues', x, y)
-
-
-class MagneticsPreprocessorAPI(BasePreprocessorAPI):
-    """Magnetics preprocessor Lua command set."""
-
-    prefix = 'mi'
-
-
-class MagneticsPostprocessorAPI(BasePostProcessorAPI):
-    """Magnetics postprocessor Lua command set."""
-
-    prefix = 'mo'
-
-
-class CurrentPreprocessorAPI(BasePreprocessorAPI):
-    """Current preprocessor Lua command set."""
-
-    prefix = 'ci'
-
-
-class CurrentPostprocessorAPI(BasePostProcessorAPI):
-    """Current postprocessor Lua command set."""
-
-    prefix = 'co'
