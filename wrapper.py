@@ -194,15 +194,15 @@ class PostProcessorAPI(BaseAPI):
         AC problems. The 1× results represent the force and torque interactions between the
         steady-state and the incremental AC solution"""
 
-        self._call_femm_with_args('lineintegral', integral_type)
+        return self._call_femm_with_args('lineintegral', integral_type)
 
     def block_integral(self, integral_type):
         """Calculate a block integral for the selected blocks. This function returns one
         (possibly complex) value, e.g.: volume = mo blockintegral(10)."""
 
-        self._call_femm_with_args('blockintegral', integral_type)
+        return self._call_femm_with_args('blockintegral', integral_type)
 
     def get_point_values(self, x, y):
         """Get the values associated with the point at x,y return values in order"""
 
-        self._call_femm_with_args('getpointvalues', x, y)
+        return self._call_femm_with_args('getpointvalues', x, y)
