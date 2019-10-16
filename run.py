@@ -51,7 +51,6 @@ if __name__ == '__main__':
                     most_recent_test.pre()
                 except pywintypes.com_error as e:
                     print('There was an error with your latest change:', e)
-
     except KeyboardInterrupt:
         pass
     finally:

@@ -1,5 +1,6 @@
 import os
 import win32com.client
+import numpy as np
 
 DOCTYPE_MAPPING = {
     'magnetics': 1,
@@ -144,6 +145,42 @@ class PreprocessorAPI(BaseAPI):
 
         self._call_femm('close', add_doctype_prefix=True)
 
+    # Utilities
+
+    def draw_polyline_pattern(self, points, center=None, repeat=None):
+        change_in_angle = (2 * np.pi) / repeat
+        ret = [points]
+        for i in range(repeat):
+            if i == 0:
+                self.draw_polyline(points)
+            else:
+                pattern_angle = change_in_angle * i
+                rotation_matrix = np.array([[np.cos(pattern_angle), -np.sin(pattern_angle)],
+                                            [np.sin(pattern_angle), np.cos(pattern_angle)]])
+                new_points = [point - np.array(center) for point in points]
+                new_points = [np.dot(rotation_matrix, np.array(point).reshape(2, 1)).reshape(2) for point in new_points]
+                new_points = [point + np.array(center) for point in new_points]
+                new_points = [np.round(point, decimals=5).tolist() for point in new_points]
+                self.draw_polyline(new_points)
+                ret.append(new_points)
+        return ret
+
+    def draw_arc_pattern(self, x1, y1, x2, y2, angle, max_seg, center=None, repeat=None):
+        change_in_angle = (2 * np.pi) / repeat
+        for i in range(repeat):
+            if i == 0:
+                self.draw_arc(x1, y1, x2, y2, angle, max_seg)
+            else:
+                pattern_angle = change_in_angle * i
+                rotation_matrix = np.array([[np.cos(pattern_angle), -np.sin(pattern_angle)],
+                                            [np.sin(pattern_angle), np.cos(pattern_angle)]])
+                points = [[x1, y1], [x2, y2]]
+                new_points = [point - np.array(center) for point in points]
+                new_points = [np.dot(rotation_matrix, np.array(point).reshape(2, 1)).reshape(2) for point in new_points]
+                new_points = [point + np.array(center) for point in new_points]
+                new_points = [np.round(point, decimals=5).tolist() for point in new_points]
+                self.draw_arc(*new_points[0], *new_points[1], angle, max_seg)
+
     # Object Add/Remove Commands
 
     def add_node(self, x, y):
@@ -201,6 +238,22 @@ class PreprocessorAPI(BaseAPI):
         self.add_node(x1, y1)
         self.add_node(x2, y2)
         self.add_arc(x1, y1, x2, y2, angle, max_seg)
+
+    def draw_circle(self, x, y, radius, max_seg):
+        """Adds nodes at the top and bottom points of a circle centred at
+        (x1, y1) with the provided radius."""
+
+        top_point = (x, y + (radius / 2))
+        bottom_point = (x, y - (radius / 2))
+        self.draw_arc(*top_point, *bottom_point, 180, max_seg)
+        self.draw_arc(*bottom_point, *top_point, 180, max_seg)
+
+    def draw_annulus(self, x, y, inner_radius=None, outer_radius=None, max_seg=None):
+        """Creates two concentric circles with the outer and inner radii provided.
+        The same ``max_seg`` value is used for both circles."""
+
+        self.draw_circle(x, y, inner_radius, max_seg)
+        self.draw_circle(x, y, outer_radius, max_seg)
 
     def draw_rectangle(self, x1, y1, x2, y2):
         """Adds nodes at the corners of a rectangle defined by the points (x1, y1) and
@@ -271,6 +324,27 @@ class PreprocessorAPI(BaseAPI):
     # Editing Commands
 
     # Zoom Commands
+
+    def zoom_natural(self):
+        """Zooms to a “natural” view with sensible extents."""
+
+        self._call_femm('zoomnatural', add_doctype_prefix=True)
+
+    def zoom_out(self):
+        """Zoom out by a factor of 50%."""
+
+        self._call_femm('zoomout', add_doctype_prefix=True)
+
+    def zoom_in(self):
+        """Zoom in by a factor of 200%."""
+
+        self._call_femm('zoomin', add_doctype_prefix=True)
+
+    def zoom(self, x1, y1, x2, y2):
+        """Set the display area to be from the bottom left corner specified by
+        (x1, y1) to the top right corner specified by (x2, y2)."""
+
+        self._call_femm_with_args('zoom', x1, y1, x2, y2)
 
     # View Commands
 
