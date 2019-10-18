@@ -166,7 +166,10 @@ class PreprocessorAPI(BaseAPI):
             command_ret = [kwargs['points']]
             for i in range(repeat):
                 if i == 0:
-                    command(**kwargs)
+                    try:
+                        command(i=i, **kwargs)
+                    except TypeError:
+                        command(**kwargs)
                 else:
                     points = kwargs['points']
                     pattern_angle = change_in_angle * i
@@ -181,7 +184,12 @@ class PreprocessorAPI(BaseAPI):
                     new_points = [point + np.array(center) for point in new_points]
                     new_points = [np.round(point, decimals=5).tolist() for point in new_points]
                     command_ret.append(new_points)
-                    command(points=new_points, **{key: kwargs[key] for key in kwargs.keys() if not key == 'points'})
+                    try:
+                        command(points=new_points, i=i,
+                                **{key: kwargs[key] for key in kwargs.keys() if not key == 'points'})
+                    except TypeError:
+                        command(points=new_points,
+                                **{key: kwargs[key] for key in kwargs.keys() if not key in ('points', 'i')})
             ret.append(command_ret)
         return ret
 
@@ -208,11 +216,15 @@ class PreprocessorAPI(BaseAPI):
             self.set_segment_prop(group=group)
             self.clear_selected()
 
-    def add_block_label(self, points=None):
+    def add_block_label(self, points=None, block_name=None, in_circuit=None, i=None, **kwargs):
         """Add a new block label at (x, y)."""
-
+        print(i, 'asdfasdf_{i}'.format(i=i))
         x, y = points[0]
         self._call_femm_with_args('addblocklabel', x, y)
+        if block_name is not None:
+            self.select_label(points=points)
+            self.set_block_prop(block_name=block_name, in_circuit=in_circuit.format(i=i + 1), **kwargs)
+            self.clear_selected()
 
     def add_arc(self, points=None, angle=None, max_seg=None, group=None):
         """Add a new arc segment from the nearest node to (x1, y1) to the nearest node to
@@ -412,6 +424,21 @@ class PreprocessorAPI(BaseAPI):
 
     # Problem Commands
 
+    def problem_definition(self, frequency=None, units=None, problem_type=None, precision=None, depth=None,
+                           minimum_angle=None, ac_solver=None):
+        """Changes the problem definition. Set frequency to the desired frequency in Hertz.
+        The units parameter specifies the units used for measuring length in the problem domain.
+        Valid "units" entries are "inches", "millimeters", "centimeters", "mils", "meters, and
+        "micrometers". Set the parameter problemtype to "planar" for a 2-D planar problem, or to
+        "axi" for an axisymmetric problem. The precision parameter dictates the precision required
+        by the solver. For example, entering 1E-8 requires the RMS of the residual to be less than 10−8.
+        A fifth parameter, representing the depth of the problem in the into-the-page direction for
+        2-D planar problems, can also also be specified. A sixth parameter represents the minimum
+        angle constraint sent to the mesh generator. A seventh parameter specifies the solver type to
+        be used for AC problems."""
+
+        self._call_femm_with_args('probdef', frequency, units, problem_type, precision, depth, minimum_angle, ac_solver)
+
     def save_as(self, filename):
         """Saves the file with name "filename". Note if you use a path you
         must use two backslashes e.g. 'c:\\temp\\myfemmfile.fem'."""
@@ -467,6 +494,54 @@ class PreprocessorAPI(BaseAPI):
         """Fetches the material specified by ``material_name`` from materials library."""
 
         self._call_femm_with_args('getmaterial', material_name)
+
+    def add_material(self, material_name, material_data=None):
+        """Adds a new material with called ``material_name`` with the
+        material properties defined in ``material_data``."""
+
+        self._call_femm_with_args(
+            'addmaterial',
+            material_name,
+            material_data.get('mu_x'),
+            material_data.get('mu_y'),
+            material_data.get('h_c'),
+            material_data.get('j'),
+            material_data.get('c_duct'),
+            material_data.get('lam_d'),
+            material_data.get('phi_hmax'),
+            material_data.get('lam_fill'),
+            material_data.get('lam_yype'),
+            material_data.get('phi_hx'),
+            material_data.get('phi_hy'),
+            material_data.get('number_of_strands'),
+            material_data.get('wire_diameter'),
+        )
+
+    def add_circuit_prop(self, circuit_name=None, current=None, circuit_type=None):
+        """Adds a new circuit property with name ``circuit_name`` with a prescribed current. The ``circuit_type``
+        parameter is 0 for a parallel-connected circuit and 1 for a series-connected circuit."""
+
+        circuit_type_number = 1 if circuit_type == 'series' else 0
+        self._call_femm_with_args('addcircprop', circuit_name, current, circuit_type_number)
+
+    def modify_point_prop(self, point_name=None, prop_number=None, value=None):
+        """This function allows for modification of a point property. The point property to be modified
+        is specified by "PointName". The next parameter is the number of the property to be set. The last
+        number is the value to be applied to the specified property. The various properties that can be
+        modified are listed below: 0: PointName, 1: A or 2: J."""
+
+        self._call_femm_with_args('modifypointprop', point_name, prop_number, value)
+
+    def modify_circuit_prop(self, circuit_name=None, prop_number=None, value=None):
+        """This function allows for modification of a point property. The point property to be modified
+        is specified by "PointName". The next parameter is the number of the property to be set. The last
+        number is the value to be applied to the specified property. The various properties that can be
+        modified are listed below: 0: CircName, 1: i or 2: CircType."""
+
+        self._call_femm_with_args('modifycircprop', circuit_name, prop_number, value)
+
+    def set_current(self, circuit_name=None, current=None):
+        self._call_femm_with_args('setcurrent', circuit_name, current)
 
     # Miscellaneous
 
