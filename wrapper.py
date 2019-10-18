@@ -42,9 +42,9 @@ class FEMMSession:
     def _add_doctype_prefix(self, string):
         return self.doctype_prefix + string
 
-    def call_femm(self, string, add_doctype_prefix=False, with_eval=True):
+    def call_femm(self, string, add_doctype_prefix=False):
         """Call a given command string using ``mlab2femm``."""
-        print(string, with_eval)
+        print(string)
         if add_doctype_prefix:
             res = self.__to_femm.mlab2femm(self._add_doctype_prefix(string))
         else:
@@ -83,7 +83,17 @@ class FEMMSession:
     def _parse_args(self, args):
         """Convert each argument into a string and then join them by commas."""
 
-        args_string = ', '.join(map(lambda arg: f'{self._quote(arg)}' if isinstance(arg, str) else str(arg), args))
+        parsed_args = []
+        for arg in args:
+            if isinstance(arg, str):
+                parsed_args.append(self._quote(arg))
+            elif isinstance(arg, bool):
+                parsed_args.append('1' if arg else '0')
+            elif arg is None:
+                parsed_args.append(self._quote('<None>'))
+            else:
+                parsed_args.append(str(arg))
+        args_string = ', '.join(parsed_args)
         return f'({args_string})'
 
     @staticmethod
@@ -128,9 +138,8 @@ class BaseAPI:
     def _add_mode_prefix(self, string):
         return f'{self.mode_prefix}_{string}'
 
-    def _call_femm(self, string, add_doctype_prefix=False, **kwargs):
-        return self.session.call_femm(f'{self._add_mode_prefix(string)}()', add_doctype_prefix=add_doctype_prefix,
-                                      **kwargs)
+    def _call_femm(self, string, **kwargs):
+        return self.session.call_femm(f'{self._add_mode_prefix(string)}()', **kwargs)
 
     def _call_femm_with_args(self, string, *args, **kwargs):
         return self.session.call_femm_with_args(self._add_mode_prefix(string), *args, **kwargs)
@@ -196,7 +205,7 @@ class PreprocessorAPI(BaseAPI):
         self._call_femm_with_args('addsegment', x1, y1, x2, y2)
         if group is not None:
             self.select_segment(points=points)
-            self.set_group(group)
+            self.set_segment_prop(group=group)
             self.clear_selected()
 
     def add_block_label(self, points=None):
@@ -289,7 +298,7 @@ class PreprocessorAPI(BaseAPI):
     def delete_selected_labels(self):
         """Delete selected labels."""
 
-        self._call_femm('deleteselectedlabels')
+        self._call_femm('deleteselectedlabels', add_doctype_prefix=True)
 
     def delete_selected_segments(self):
         """Delete selected segments."""
@@ -323,8 +332,11 @@ class PreprocessorAPI(BaseAPI):
         x, y = points[0]
         self._call_femm_with_args('selectnode', x, y, with_eval=False)
 
-    def select_label(self):
-        ...
+    def select_label(self, points=None):
+        """Select the label closet to (x,y). Returns the coordinates of the selected label."""
+
+        x, y = points[0]
+        self._call_femm_with_args('selectlabel', x, y)
 
     def select_arc_segment(self, points=None):
         """Select the arc segment closest to (x, y)."""
@@ -335,16 +347,63 @@ class PreprocessorAPI(BaseAPI):
         y_mid = y1 + ((y2 - y1) / 2)
         self._call_femm_with_args('selectarcsegment', x_mid, y_mid)
 
-    def select_group(self):
-        ...
+    def select_group(self, group):
+        """Select the nth group of nodes, segments, arc segments and blocklabels. This
+        function will clear all previously selected elements and leave the editmode in
+        4 (group)."""
+
+        self._call_femm_with_args('selectgroup', group)
 
     # Object Labeling Commands
 
-    def set_node_prop(self):
-        ...
+    def set_node_prop(self, prop_name=None, group=None):
+        """Set the selected nodes to have the nodal property
+        ``prop_name`` and group ``group``."""
 
-    def set_block_prop(self):
-        ...
+        self._call_femm_with_args('setnodeprop', prop_name, group)
+
+    def set_block_prop(self, block_name=None, auto_mesh=False, mesh_size=None, in_circuit=None, mag_direction=False,
+                       group=None, turns=None):
+        """ Set the selected block labels to have the properties:
+
+            – Block property ``block_name``;
+            – ``auto_mesh``: ``False`` = mesher defers to mesh size constraint defined in ``mesh_size``,
+              ``True`` = mesher automatically chooses the mesh density;
+            – ``mesh_size``: size constraint on the mesh in the block marked by this label;
+            – Block is a member of the circuit named ``in_circuit``;
+            – The magnetization is directed along an angle in measured in degrees denoted by the
+              parameter ``mag_direction``. Alternatively, ``mag_direction`` can be a string containing a
+              formula that prescribes the magnetization direction as a function of element position.
+              In this formula theta and R denotes the angle in degrees of a line connecting the center
+              each element with the origin and the length of this line, respectively; x and y denote
+              the x- and y-position of the center of the each element. For axisymmetric problems, r
+              and z should be used in place of x and y;
+            – A member of group number group;
+            – The number of turns associated with this label is denoted by turns."""
+
+        self._call_femm_with_args('setblockprop', block_name, auto_mesh, mesh_size, in_circuit, mag_direction, group,
+                                  turns)
+
+    def set_segment_prop(self, prop_name=None, element_size=None, auto_mesh=False, hide=False, group=None):
+        """Set the select segments to have:
+
+            – Boundary property ``prop_name``;
+            – Local element size along segment no greater than ``element_size``;
+            – ``auto_mesh``: ``False`` = mesher defers to the element constraint defined by element_size,
+              ``True`` = mesher automatically chooses mesh size along the selected segments;
+            – ``hide``: ``False`` = not hidden in post-processor, ``True`` = hidden in post-processor;
+            – A member of group number group."""
+
+        self._call_femm_with_args('setsegmentprop', prop_name, element_size, auto_mesh, hide, group)
+
+    def set_arc_segment_prop(self, max_seg_deg=None, prop_name=None, hide=None, group=None):
+        """Set the select segments to have:
+            – Boundary property ``prop_name``;
+            – Local element size along segment no greater than ``element_size``;
+            – ``auto_mesh``: ``False`` = mesher defers to the element constraint defined by ``element_size``,
+              ``True`` = mesher automatically chooses mesh size along the selected segments;
+            – ``hide``: ``False`` = not hidden in post-processor, ``True`` == hidden in post-processor;
+            – A member of group number ``group``."""
 
     def set_group(self, group):
         """Set the group associated of the selected items to ``group``."""
@@ -353,7 +412,27 @@ class PreprocessorAPI(BaseAPI):
 
     # Problem Commands
 
+    def save_as(self, filename):
+        """Saves the file with name "filename". Note if you use a path you
+        must use two backslashes e.g. 'c:\\temp\\myfemmfile.fem'."""
+
+        parsed_filename = filename.replace('/', '\\')
+        self._call_femm_with_args('saveas', parsed_filename)
+
     # Mesh Commands
+
+    def create_mesh(self):
+        """Runs triangle to create a mesh. Note that this is not a necessary
+        precursor of performing an analysis, as mi analyze() will make sure
+        the mesh is up to date before running an analysis. The number of
+        elements in the mesh is pushed back onto the lua stack."""
+
+        self._call_femm('createmesh', add_doctype_prefix=True)
+
+    def show_mesh(self):
+        """Shows the mesh."""
+
+        self._call_femm('showmesh', add_doctype_prefix=True)
 
     # Editing Commands
 
@@ -384,7 +463,27 @@ class PreprocessorAPI(BaseAPI):
 
     # Object Properties
 
+    def get_material(self, material_name):
+        """Fetches the material specified by ``material_name`` from materials library."""
+
+        self._call_femm_with_args('getmaterial', material_name)
+
     # Miscellaneous
+
+    def make_abc(self, points=None, number_of_shells=None, radius=None, boundary_condition_type=None):
+        """Creates a series of circular shells that emulate the impedance of
+        an unbounded domain (i.e. an Inprovised Asymptotic Boundary Condition). The n parameter
+        contains the number of shells to be used (should be between 1 and 10), R is the radius of the
+        solution domain, and (x,y) denotes the center of the solution domain. The bc parameter
+        should be specified as 0 for a Dirichlet outer edge or 1 for a Neumann outer edge. If the
+        function is called without all the parameters, the function makes up reasonable values for the
+        missing parameters."""
+
+        if points is None and number_of_shells is None and radius is None and boundary_condition_type is None:
+            self._call_femm('makeABC', add_doctype_prefix=True)
+        else:
+            x, y = points[0]
+            self._call_femm_with_args('makeABC', number_of_shells, radius, x, y, boundary_condition_type)
 
 
 class PostProcessorAPI(BaseAPI):
