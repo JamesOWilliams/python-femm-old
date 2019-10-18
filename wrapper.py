@@ -42,9 +42,9 @@ class FEMMSession:
     def _add_doctype_prefix(self, string):
         return self.doctype_prefix + string
 
-    def call_femm(self, string, add_doctype_prefix=False):
+    def call_femm(self, string, add_doctype_prefix=False, with_eval=True):
         """Call a given command string using ``mlab2femm``."""
-
+        print(string, with_eval)
         if add_doctype_prefix:
             res = self.__to_femm.mlab2femm(self._add_doctype_prefix(string))
         else:
@@ -54,7 +54,10 @@ class FEMMSession:
         elif res[0] == 'e':
             raise Exception(res)
         else:
-            res = eval(res)
+            try:
+                res = eval(res)
+            except SyntaxError as e:
+                print(f'Syntax error in res: {e}')
         if len(res) == 1:
             res = res[0]
         return res
@@ -64,12 +67,12 @@ class FEMMSession:
 
         self.__to_femm(string)
 
-    def call_femm_with_args(self, command, *args, add_doctype_prefix=True):
+    def call_femm_with_args(self, command, *args, add_doctype_prefix=True, **kwargs):
         """Call a given command string using ``mlab2femm`` and parse the args."""
 
         if add_doctype_prefix:
             return self.call_femm(self._add_doctype_prefix(command) + self._parse_args(args))
-        return self.call_femm(command + self._parse_args(args))
+        return self.call_femm(command + self._parse_args(args), **kwargs)
 
     @staticmethod
     def _fix_path(path):
@@ -77,11 +80,10 @@ class FEMMSession:
 
         return path.replace('\\', '/').replace('//', '/')
 
-    @staticmethod
-    def _parse_args(args):
+    def _parse_args(self, args):
         """Convert each argument into a string and then join them by commas."""
 
-        args_string = ', '.join(map(lambda arg: f'"{arg}"' if isinstance(arg, str) else str(arg), args))
+        args_string = ', '.join(map(lambda arg: f'{self._quote(arg)}' if isinstance(arg, str) else str(arg), args))
         return f'({args_string})'
 
     @staticmethod
@@ -118,7 +120,6 @@ class FEMMSession:
 
 
 class BaseAPI:
-
     mode_prefix = None
 
     def __init__(self, session):
@@ -127,11 +128,12 @@ class BaseAPI:
     def _add_mode_prefix(self, string):
         return f'{self.mode_prefix}_{string}'
 
-    def _call_femm(self, string, add_doctype_prefix=False):
-        return self.session.call_femm(f'{self._add_mode_prefix(string)}()', add_doctype_prefix=add_doctype_prefix)
+    def _call_femm(self, string, add_doctype_prefix=False, **kwargs):
+        return self.session.call_femm(f'{self._add_mode_prefix(string)}()', add_doctype_prefix=add_doctype_prefix,
+                                      **kwargs)
 
-    def _call_femm_with_args(self, string, *args):
-        return self.session.call_femm_with_args(self._add_mode_prefix(string), *args)
+    def _call_femm_with_args(self, string, *args, **kwargs):
+        return self.session.call_femm_with_args(self._add_mode_prefix(string), *args, **kwargs)
 
 
 class PreprocessorAPI(BaseAPI):
@@ -147,122 +149,132 @@ class PreprocessorAPI(BaseAPI):
 
     # Utilities
 
-    def draw_polyline_pattern(self, points, center=None, repeat=None):
+    @staticmethod
+    def draw_pattern(commands=None, center=None, repeat=None):
         change_in_angle = (2 * np.pi) / repeat
-        ret = [points]
-        for i in range(repeat):
-            if i == 0:
-                self.draw_polyline(points)
-            else:
-                pattern_angle = change_in_angle * i
-                rotation_matrix = np.array([[np.cos(pattern_angle), -np.sin(pattern_angle)],
-                                            [np.sin(pattern_angle), np.cos(pattern_angle)]])
-                new_points = [point - np.array(center) for point in points]
-                new_points = [np.dot(rotation_matrix, np.array(point).reshape(2, 1)).reshape(2) for point in new_points]
-                new_points = [point + np.array(center) for point in new_points]
-                new_points = [np.round(point, decimals=5).tolist() for point in new_points]
-                self.draw_polyline(new_points)
-                ret.append(new_points)
+        ret = []
+        for command, kwargs in commands:
+            command_ret = [kwargs['points']]
+            for i in range(repeat):
+                if i == 0:
+                    command(**kwargs)
+                else:
+                    points = kwargs['points']
+                    pattern_angle = change_in_angle * i
+                    rotation_matrix = np.array([[np.cos(pattern_angle), -np.sin(pattern_angle)],
+                                                [np.sin(pattern_angle), np.cos(pattern_angle)]])
+                    # Transform all points to center rotation about the origin.
+                    new_points = [point - np.array(center) for point in points]
+                    # Rotate all points by ``pattern_angle``.
+                    new_points = [np.dot(rotation_matrix, np.array(point).reshape(2, 1)).reshape(2) for point in
+                                  new_points]
+                    # Transform all points back to their original center.
+                    new_points = [point + np.array(center) for point in new_points]
+                    new_points = [np.round(point, decimals=5).tolist() for point in new_points]
+                    command_ret.append(new_points)
+                    command(points=new_points, **{key: kwargs[key] for key in kwargs.keys() if not key == 'points'})
+            ret.append(command_ret)
         return ret
-
-    def draw_arc_pattern(self, x1, y1, x2, y2, angle, max_seg, center=None, repeat=None):
-        change_in_angle = (2 * np.pi) / repeat
-        for i in range(repeat):
-            if i == 0:
-                self.draw_arc(x1, y1, x2, y2, angle, max_seg)
-            else:
-                pattern_angle = change_in_angle * i
-                rotation_matrix = np.array([[np.cos(pattern_angle), -np.sin(pattern_angle)],
-                                            [np.sin(pattern_angle), np.cos(pattern_angle)]])
-                points = [[x1, y1], [x2, y2]]
-                new_points = [point - np.array(center) for point in points]
-                new_points = [np.dot(rotation_matrix, np.array(point).reshape(2, 1)).reshape(2) for point in new_points]
-                new_points = [point + np.array(center) for point in new_points]
-                new_points = [np.round(point, decimals=5).tolist() for point in new_points]
-                self.draw_arc(*new_points[0], *new_points[1], angle, max_seg)
 
     # Object Add/Remove Commands
 
-    def add_node(self, x, y):
+    def add_node(self, points=None, group=None):
         """Add a new node at x, y."""
 
+        x, y = points[0]
         self._call_femm_with_args('addnode', x, y)
+        if group is not None:
+            self.select_node(points=points)
+            self.set_group(group)
+            self.clear_selected()
 
-    def add_segment(self, x1, y1, x2, y2):
+    def add_segment(self, points=None, group=None):
         """Add a new line segment from node closest to (x1, y1) to node closest to (x2, y2)."""
 
+        x1, y1 = points[0]
+        x2, y2 = points[1]
         self._call_femm_with_args('addsegment', x1, y1, x2, y2)
+        if group is not None:
+            self.select_segment(points=points)
+            self.set_group(group)
+            self.clear_selected()
 
-    def add_block_label(self, x, y):
+    def add_block_label(self, points=None):
         """Add a new block label at (x, y)."""
 
+        x, y = points[0]
         self._call_femm_with_args('addblocklabel', x, y)
 
-    def add_arc(self, x1, y1, x2, y2, angle, max_seg):
+    def add_arc(self, points=None, angle=None, max_seg=None, group=None):
         """Add a new arc segment from the nearest node to (x1, y1) to the nearest node to
         (x2, y2) with angle ‘angle’ divided into ‘max_seg’ segments"""
 
-        self._call_femm_with_args('addarc', x1, y1, x2, y2, angle, max_seg)
+        self._call_femm_with_args('addarc', *points[0], *points[1], angle, max_seg)
+        if group is not None:
+            self.select_arc_segment(points=points)
+            self.set_group(group)
+            self.clear_selected()
 
-    def draw_line(self, x1, y1, x2, y2):
+    def draw_line(self, points=None, group=None):
         """Adds nodes at (x1,y1) and (x2,y2) and adds a line between the nodes."""
 
-        self.add_node(x1, y1)
-        self.add_node(x2, y2)
-        self.add_segment(x1, y1, x2, y2)
+        self.add_node(points=[points[0]], group=group)
+        self.add_node(points=[points[1]], group=group)
+        self.add_segment(points=points, group=group)
 
-    def draw_polyline(self, points_list):
+    def draw_polyline(self, points=None, group=None):
         """Adds nodes at each of the specified points and connects them with segments.
-        ``points_list`` will look something like [[x1, y1], [x2, y2], ...]"""
+        ``points`` will look something like [[x1, y1], [x2, y2], ...]"""
 
-        for i, current_point in enumerate(points_list):
+        for i, current_point in enumerate(points):
             # Add each node.
-            self.add_node(*current_point)
-            if 0 < i < len(points_list):
+            self.add_node(points=[current_point], group=group)
+            if 0 < i < len(points):
                 # Draw lines between each node.
-                previous_point = points_list[i-1]
-                self.draw_line(*previous_point, *current_point)
+                previous_point = points[i - 1]
+                self.draw_line(points=[previous_point, current_point], group=group)
 
-    def draw_polygon(self, points_list):
+    def draw_polygon(self, points=None, group=None):
         """Adds nodes at each of the specified points and connects them with
         segments to form a closed contour."""
 
-        self.draw_polyline(points_list)
+        self.draw_polyline(points=points, group=group)
         # Connect the first and the last nodes.
-        self.draw_line(*points_list[0], *points_list[::-1][0])
+        self.draw_line(points=[points[0], points[::-1][0]], group=group)
 
-    def draw_arc(self, x1, y1, x2, y2, angle, max_seg):
+    def draw_arc(self, points=None, angle=None, max_seg=None, group=None):
         """Adds nodes at (x1,y1) and (x2,y2) and adds an arc of the specified
         angle and discretization connecting the nodes."""
 
-        self.add_node(x1, y1)
-        self.add_node(x2, y2)
-        self.add_arc(x1, y1, x2, y2, angle, max_seg)
+        self.add_node(points=[points[0]], group=group)
+        self.add_node(points=[points[1]], group=group)
+        self.add_arc(points=points, angle=angle, max_seg=max_seg, group=group)
 
-    def draw_circle(self, x, y, radius, max_seg):
+    def draw_circle(self, points=None, radius=None, max_seg=None, group=None):
         """Adds nodes at the top and bottom points of a circle centred at
         (x1, y1) with the provided radius."""
 
-        top_point = (x, y + (radius / 2))
-        bottom_point = (x, y - (radius / 2))
-        self.draw_arc(*top_point, *bottom_point, 180, max_seg)
-        self.draw_arc(*bottom_point, *top_point, 180, max_seg)
+        x, y = points[0]
+        top_point = (x, y + (radius / 1))
+        bottom_point = (x, y - (radius / 1))
+        self.draw_arc(points=[top_point, bottom_point], angle=180, max_seg=max_seg, group=group)
+        self.draw_arc(points=[bottom_point, top_point], angle=180, max_seg=max_seg, group=group)
 
-    def draw_annulus(self, x, y, inner_radius=None, outer_radius=None, max_seg=None):
+    def draw_annulus(self, points=None, inner_radius=None, outer_radius=None, max_seg=None, group=None):
         """Creates two concentric circles with the outer and inner radii provided.
         The same ``max_seg`` value is used for both circles."""
 
-        self.draw_circle(x, y, inner_radius, max_seg)
-        self.draw_circle(x, y, outer_radius, max_seg)
+        self.draw_circle(points=points, radius=inner_radius, max_seg=max_seg, group=group)
+        self.draw_circle(points=points, radius=outer_radius, max_seg=max_seg, group=group)
 
-    def draw_rectangle(self, x1, y1, x2, y2):
+    def draw_rectangle(self, points=None, group=None):
         """Adds nodes at the corners of a rectangle defined by the points (x1, y1) and
         (x2, y2), then adds segments connecting the corners of the rectangle."""
 
-        self.draw_line(x1, y1, x2, y1)
-        self.draw_line(x2, y1, x2, y2)
-        self.draw_line(x2, y2, x1, y2)
-        self.draw_line(x1, y2, x1, y1)
+        self.draw_line(points=points, group=group)
+        self.draw_line(points=points, group=group)
+        self.draw_line(points=points, group=group)
+        self.draw_line(points=points, group=group)
 
     def delete_selected(self):
         """Delete all selected objects."""
@@ -292,19 +304,36 @@ class PreprocessorAPI(BaseAPI):
     # Geometry Selection Commands
 
     def clear_selected(self):
-        ...
+        """Clear all selected nodes, blocks, segments and arc segments."""
 
-    def select_segment(self):
-        ...
+        self._call_femm('clearselected', add_doctype_prefix=True)
 
-    def select_node(self):
-        ...
+    def select_segment(self, points=None):
+        """Select the line segment closest to (x, y)."""
+
+        x1, y1 = points[0]
+        x2, y2 = points[1]
+        x_mid = x1 + ((x2 - x1) / 2)
+        y_mid = y1 + ((y2 - y1) / 2)
+        self._call_femm_with_args('selectsegment', x_mid, y_mid)
+
+    def select_node(self, points=None):
+        """Select the node closest to (x,y). Returns the coordinates of the selected node."""
+
+        x, y = points[0]
+        self._call_femm_with_args('selectnode', x, y, with_eval=False)
 
     def select_label(self):
         ...
 
-    def select_arc_segment(self):
-        ...
+    def select_arc_segment(self, points=None):
+        """Select the arc segment closest to (x, y)."""
+
+        x1, y1 = points[0]
+        x2, y2 = points[1]
+        x_mid = x1 + ((x2 - x1) / 2)
+        y_mid = y1 + ((y2 - y1) / 2)
+        self._call_femm_with_args('selectarcsegment', x_mid, y_mid)
 
     def select_group(self):
         ...
@@ -316,6 +345,11 @@ class PreprocessorAPI(BaseAPI):
 
     def set_block_prop(self):
         ...
+
+    def set_group(self, group):
+        """Set the group associated of the selected items to ``group``."""
+
+        self._call_femm_with_args('setgroup', group)
 
     # Problem Commands
 
