@@ -1,4 +1,4 @@
-# Python Wrapper for FEMM (Windows)
+# Python Framework for FEMM (currently Windows only)
 
 Work in progress, commands are being added as the wrapper is used,
 therefore not all commands have been wrapped.
