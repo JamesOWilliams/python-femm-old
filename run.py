@@ -3,7 +3,7 @@ import time
 import importlib
 import pywintypes
 
-from pyfemm_test.wrapper import FEMMSession
+from wrapper import FEMMSession
 
 
 class BaseRunner:
@@ -24,7 +24,7 @@ class BaseRunner:
         self.session.pre.close()
 
 
-if __name__ == '__main__':
+def run():
     import pyfemm_test.examples.magnetic_bearing
     path = 'C:/Users/mail/pyfemm_test/examples/magnetic_bearing.py'
     most_recent_change = os.path.getmtime(path)
