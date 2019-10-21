@@ -1,4 +1,4 @@
-from pyfemm_test.run import BaseRunner
+from ..run import BaseRunner
 
 
 class Runner(BaseRunner):
@@ -28,7 +28,7 @@ class Runner(BaseRunner):
 
         # Define dimensions.
         center = [60, 60]
-        poles = 6
+        poles = 4
         pole_length = 25
         pole_width = 20
         stator_radius = 60
@@ -150,7 +150,7 @@ class Runner(BaseRunner):
         self.session.pre.clear_selected()
 
         # Set winding currents.
-        self.session.pre.add_circuit_prop(circuit_name='winding_1', current=5e3, circuit_type='series')
+        self.session.pre.add_circuit_prop(circuit_name='winding_1', current=5, circuit_type='series')
         for i in range(poles - 1):
             self.session.pre.add_circuit_prop(circuit_name=f'winding_{i+2}', current=0, circuit_type='series')
 
