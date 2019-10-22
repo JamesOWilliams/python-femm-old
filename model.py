@@ -3,8 +3,9 @@ from run import BaseRunner
 
 class Runner(BaseRunner):
 
-    def pre(self, rotor_center=None):
+    def pre(self, process_id=None, rotor_center=None):
         self.session.new_document(0)
+        self.session.set_current_directory('C:/Users/mail/python-femm/temp')
 
         # Define the problem.
         self.session.pre.problem_definition(
@@ -156,9 +157,11 @@ class Runner(BaseRunner):
         for i in range(poles - 1):
             self.session.pre.add_circuit_prop(circuit_name=f'winding_{i+2}', current=0, circuit_type='series')
 
-        self.session.pre.save_as('test.fem')
+        if process_id is not None:
+            self.session.pre.save_as(f'{rotor_center[1]}_{process_id.pid}.fem')
+        else:
+            self.session.pre.save_as('test.fem')
         self.session.pre.make_abc()
-        self.session.pre.create_mesh()
 
         # Refit the view window.
         self.session.pre.zoom_natural()

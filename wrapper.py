@@ -101,10 +101,10 @@ class FEMMSession:
     def _quote(string):
         return f'"{string}"'
 
-    def set_current_directory(self):
+    def set_current_directory(self, path=None):
         """Set the current working directory using ``os.getcwd()``."""
 
-        path_of_current_directory = self._fix_path(os.getcwd())
+        path_of_current_directory = self._fix_path(os.getcwd() if path is None else path)
         self.call_femm(f'setcurrentdirectory({self._quote(path_of_current_directory)})')
 
     def new_document(self, doctype):

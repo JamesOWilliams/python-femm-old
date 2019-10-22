@@ -1,7 +1,7 @@
 import sys
 
 from run import run_pre, run_solve, hot_reload_pre, run_post
-from scenes import scene
+from scenes import BaseSceneRunner, ForceYScene
 
 if __name__ == '__main__':
     args = sys.argv
@@ -22,6 +22,7 @@ if __name__ == '__main__':
         pre_runner = run_solve(pre_runner)
         run_post(pre_runner, hold=True)
     elif command_name == 'scene':
-        scene()
+        scene_runner = BaseSceneRunner(scene_class=ForceYScene)
+        scene_runner.start()
     else:
         raise ValueError('No matching command.')
