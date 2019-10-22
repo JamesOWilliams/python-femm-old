@@ -44,7 +44,7 @@ class FEMMSession:
 
     def call_femm(self, string, add_doctype_prefix=False):
         """Call a given command string using ``mlab2femm``."""
-        print(string)
+
         if add_doctype_prefix:
             res = self.__to_femm.mlab2femm(self._add_doctype_prefix(string))
         else:
@@ -56,8 +56,9 @@ class FEMMSession:
         else:
             try:
                 res = eval(res)
-            except SyntaxError as e:
-                print(f'Syntax error in res: {e}')
+            except SyntaxError:
+                # TODO: Look into this.
+                pass
         if len(res) == 1:
             res = res[0]
         return res
@@ -101,7 +102,7 @@ class FEMMSession:
         return f'"{string}"'
 
     def set_current_directory(self):
-        """Set the current working directory using ``os.getcmd()``."""
+        """Set the current working directory using ``os.getcwd()``."""
 
         path_of_current_directory = self._fix_path(os.getcwd())
         self.call_femm(f'setcurrentdirectory({self._quote(path_of_current_directory)})')
@@ -146,7 +147,7 @@ class BaseAPI:
 
 
 class PreprocessorAPI(BaseAPI):
-    """Preprocessor API"""
+    """Preprocessor API."""
 
     mode_prefix = 'i'
 
@@ -218,7 +219,7 @@ class PreprocessorAPI(BaseAPI):
 
     def add_block_label(self, points=None, block_name=None, in_circuit=None, i=None, **kwargs):
         """Add a new block label at (x, y)."""
-        print(i, 'asdfasdf_{i}'.format(i=i))
+
         x, y = points[0]
         self._call_femm_with_args('addblocklabel', x, y)
         if block_name is not None:
@@ -228,7 +229,7 @@ class PreprocessorAPI(BaseAPI):
 
     def add_arc(self, points=None, angle=None, max_seg=None, group=None):
         """Add a new arc segment from the nearest node to (x1, y1) to the nearest node to
-        (x2, y2) with angle ‘angle’ divided into ‘max_seg’ segments"""
+        (x2, y2) with angle ‘angle’ divided into ‘max_seg’ segments."""
 
         self._call_femm_with_args('addarc', *points[0], *points[1], angle, max_seg)
         if group is not None:
@@ -439,6 +440,17 @@ class PreprocessorAPI(BaseAPI):
 
         self._call_femm_with_args('probdef', frequency, units, problem_type, precision, depth, minimum_angle, ac_solver)
 
+    def analyze(self, minimized=False):
+        """Runs fkern to solve the problem. ``minimized`` determines whether or not to
+        minmise the fkern window during solving."""
+
+        self._call_femm_with_args('analyze', '1' if minimized else '0')
+
+    def load_solution(self):
+        """Loads and displays the solution corresponding to the current geometry."""
+
+        self._call_femm('loadsolution', add_doctype_prefix=True)
+
     def save_as(self, filename):
         """Saves the file with name "filename". Note if you use a path you
         must use two backslashes e.g. 'c:\\temp\\myfemmfile.fem'."""
@@ -510,7 +522,7 @@ class PreprocessorAPI(BaseAPI):
             material_data.get('lam_d'),
             material_data.get('phi_hmax'),
             material_data.get('lam_fill'),
-            material_data.get('lam_yype'),
+            material_data.get('lam_type'),
             material_data.get('phi_hx'),
             material_data.get('phi_hy'),
             material_data.get('number_of_strands'),
@@ -562,7 +574,7 @@ class PreprocessorAPI(BaseAPI):
 
 
 class PostProcessorAPI(BaseAPI):
-    """Postprocessor API"""
+    """Postprocessor API."""
 
     mode_prefix = 'o'
 
@@ -585,3 +597,46 @@ class PostProcessorAPI(BaseAPI):
         """Get the values associated with the point at x,y return values in order"""
 
         return self._call_femm_with_args('getpointvalues', x, y)
+
+    # Selection Commands.
+
+    def set_edit_mode(self, mode):
+        """Sets the mode of the postprocessor to point, contour, or area mode.
+        Valid entries for mode are "point", "contour", and "area"."""
+
+        self._call_femm_with_args('seteditmode', mode)
+
+    def select_block(self, points=None):
+        """Select the block that contains point (x,y)."""
+        import femm
+        x, y = points[0]
+        self._call_femm_with_args('selectblock', x, y)
+
+    def group_select_block(self, group=None):
+        """Selects all of the blocks that are labeled by block labels that are
+        members of group n. If no number is specified (i.e. mo_groupselectblock()),
+        all blocks are selected."""
+
+        self._call_femm_with_args('groupselectblock', group)
+
+    # View Commands.
+
+    def show_density_plot(self, legend=None, grey_scale=None, lower_bound=None, upper_bound=None, plot_type=None):
+        """Shows the flux density plot with options:
+            – legend Set to 0 to hide the plot legend or 1 to show the plot legend.
+            – gscale Set to 0 for a colour density plot or 1 for a grey scale density plot.
+            – upper_B Sets the upper display limit for the density plot.
+            – lower_B Sets the lower display limit for the density plot.
+            – type Type of density plot to display. Valid entries are "bmag", "breal", and "bimag"
+                for magnitude, real component, and imaginary component of flux density (B), respectively;
+                "hmag", "hreal", and "himag" for magnitude, real component, and imaginary
+                component of field intensity (H); and "jmag", "jreal", and "jimag" for magnitude,
+                real component, and imaginary component of current density (J).
+
+        If legend is set to -1 all parameters are ignored and default values are used e.g.:
+        mo_showdensityplot(-1)."""
+
+        legend_value = ('1' if grey_scale else '0') if not grey_scale == -1 else -1
+        grey_scale_value = '1' if grey_scale else '0'
+        self._call_femm_with_args('showdensityplot', legend_value, grey_scale_value, upper_bound, lower_bound,
+                                  plot_type)

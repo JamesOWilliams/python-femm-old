@@ -1,9 +1,9 @@
-from ..run import BaseRunner
+from run import BaseRunner
 
 
 class Runner(BaseRunner):
 
-    def pre(self):
+    def pre(self, rotor_center=None):
         self.session.new_document(0)
 
         # Define the problem.
@@ -37,6 +37,7 @@ class Runner(BaseRunner):
         angle = (360 / poles) / smoothing
         rotor_radius = 25
         rotor_bore = 6
+        rotor_center = rotor_center or center
         coil_width = 5
         coil_length = 16
         coil_angle = 45
@@ -134,7 +135,8 @@ class Runner(BaseRunner):
         ], center=center, repeat=poles)
 
         # Draw the bearing rotor.
-        self.session.pre.draw_annulus(points=[center], inner_radius=rotor_bore, outer_radius=rotor_radius, max_seg=1)
+        self.session.pre.draw_annulus(points=[rotor_center], inner_radius=rotor_bore, outer_radius=rotor_radius,
+                                      max_seg=1, group=2)
 
         # Set the properties of the rotor.
         self.session.pre.add_block_label(points=[[60, 75]])
@@ -145,12 +147,12 @@ class Runner(BaseRunner):
             mesh_size=1,
             in_circuit=None,
             mag_direction=0,
-            group=1,
+            group=2,
         )
         self.session.pre.clear_selected()
 
         # Set winding currents.
-        self.session.pre.add_circuit_prop(circuit_name='winding_1', current=5, circuit_type='series')
+        self.session.pre.add_circuit_prop(circuit_name='winding_1', current=10, circuit_type='series')
         for i in range(poles - 1):
             self.session.pre.add_circuit_prop(circuit_name=f'winding_{i+2}', current=0, circuit_type='series')
 
@@ -161,5 +163,13 @@ class Runner(BaseRunner):
         # Refit the view window.
         self.session.pre.zoom_natural()
 
+    def solve(self):
+        self.session.pre.analyze()
+        self.session.pre.zoom_natural()
+        self.session.pre.load_solution()
+        self.session.post.show_density_plot(plot_type='bmag')
+
     def post(self):
-        pass
+        self.session.post.group_select_block(group='2')
+        force_y = self.session.post.block_integral(19)
+        return force_y
